@@ -2,7 +2,16 @@
 {
     static void Main()
     {
-        string data = @"Date,SKU,Unit Price,Quantity,Total Price
+        string data = GetData();
+
+        var result = ProcessData(data);
+
+        PrintResults(result);
+    }
+
+    static string GetData()
+    {
+        return @"Date,SKU,Unit Price,Quantity,Total Price
         2019-01-01,Death by Chocolate,180,5,900
         2019-01-01,Cake Fudge,150,1,150
         2019-01-01,Cake Fudge,150,1,150
@@ -19,16 +28,13 @@
         2019-03-01,Vanilla Single Scoop,50,5,250
         2019-03-01,Cake Fudge,150,5,750
         2019-03-01,Pista Single Scoop,60,1,60";
+    }
 
+    static ResultModel ProcessData(string data)
+    {
         var lines = data.Split('\n');
 
-        double totalSales = 0;
-
-        var monthlySales = new Dictionary<string, double>();
-        var monthlyItemQty = new Dictionary<string, Dictionary<string, int>>();
-        var monthlyItemRevenue = new Dictionary<string, Dictionary<string, double>>();
-        var monthlyItemOrders = new Dictionary<string, Dictionary<string, List<int>>>();
-        var errors = new List<string>();
+        var result = new ResultModel();
 
         for (int i = 1; i < lines.Length; i++)
         {
@@ -36,170 +42,124 @@
 
             if (row.Length != 5)
             {
-                errors.Add($"Row {i} malformed");
+                result.Errors.Add($"Row {i} malformed");
                 continue;
             }
 
-            string dateStr = row[0];
-            string sku = row[1];
-
-            if (!DateTime.TryParse(dateStr, out DateTime date))
+            if (!DateTime.TryParse(row[0], out DateTime date))
             {
-                errors.Add($"Row {i} invalid date");
+                result.Errors.Add($"Row {i} invalid date");
                 continue;
             }
+
+            string sku = row[1];
 
             if (!double.TryParse(row[2], out double unitPrice) ||
                 !int.TryParse(row[3], out int quantity) ||
                 !double.TryParse(row[4], out double totalPrice))
             {
-                errors.Add($"Row {i} parsing error");
+                result.Errors.Add($"Row {i} parsing error");
                 continue;
             }
 
-            // Validations
-            if (unitPrice * quantity != totalPrice)
-                errors.Add($"Row {i} price mismatch");
-
-            if (quantity < 1)
-                errors.Add($"Row {i} quantity < 1");
-
-            if (unitPrice < 0)
-                errors.Add($"Row {i} unit price < 0");
-
-            if (totalPrice < 0)
-                errors.Add($"Row {i} total price < 0");
+            ValidateRow(i, unitPrice, quantity, totalPrice, result.Errors);
 
             string month = date.ToString("yyyy-MM");
 
-            // Total sales
-            totalSales += totalPrice;
-
-            // Monthly sales
-            if (!monthlySales.ContainsKey(month))
-                monthlySales[month] = 0;
-
-            monthlySales[month] += totalPrice;
-
-            // Quantity tracking
-            if (!monthlyItemQty.ContainsKey(month))
-                monthlyItemQty[month] = new Dictionary<string, int>();
-
-            if (!monthlyItemQty[month].ContainsKey(sku))
-                monthlyItemQty[month][sku] = 0;
-
-            monthlyItemQty[month][sku] += quantity;
-
-            // Revenue tracking
-            if (!monthlyItemRevenue.ContainsKey(month))
-                monthlyItemRevenue[month] = new Dictionary<string, double>();
-
-            if (!monthlyItemRevenue[month].ContainsKey(sku))
-                monthlyItemRevenue[month][sku] = 0;
-
-            monthlyItemRevenue[month][sku] += totalPrice;
-
-            // Orders tracking
-            if (!monthlyItemOrders.ContainsKey(month))
-                monthlyItemOrders[month] = new Dictionary<string, List<int>>();
-
-            if (!monthlyItemOrders[month].ContainsKey(sku))
-                monthlyItemOrders[month][sku] = new List<int>();
-
-            monthlyItemOrders[month][sku].Add(quantity);
+            UpdateSales(result, month, sku, quantity, totalPrice);
         }
 
+        return result;
+    }
+
+    static void ValidateRow(int rowNum, double unitPrice, int qty, double total, List<string> errors)
+    {
+        if (unitPrice * qty != total)
+            errors.Add($"Row {rowNum} price mismatch");
+
+        if (qty < 1)
+            errors.Add($"Row {rowNum} quantity < 1");
+
+        if (unitPrice < 0)
+            errors.Add($"Row {rowNum} unit price < 0");
+
+        if (total < 0)
+            errors.Add($"Row {rowNum} total price < 0");
+    }
+
+    static void UpdateSales(ResultModel result, string month, string sku, int qty, double total)
+    {
+        result.TotalSales += total;
+
+        if (!result.MonthlySales.ContainsKey(month))
+            result.MonthlySales[month] = 0;
+
+        result.MonthlySales[month] += total;
+
+        if (!result.MonthlyItemQty.ContainsKey(month))
+            result.MonthlyItemQty[month] = new Dictionary<string, int>();
+
+        if (!result.MonthlyItemQty[month].ContainsKey(sku))
+            result.MonthlyItemQty[month][sku] = 0;
+
+        result.MonthlyItemQty[month][sku] += qty;
+
+        if (!result.MonthlyItemRevenue.ContainsKey(month))
+            result.MonthlyItemRevenue[month] = new Dictionary<string, double>();
+
+        if (!result.MonthlyItemRevenue[month].ContainsKey(sku))
+            result.MonthlyItemRevenue[month][sku] = 0;
+
+        result.MonthlyItemRevenue[month][sku] += total;
+
+        if (!result.MonthlyItemOrders.ContainsKey(month))
+            result.MonthlyItemOrders[month] = new Dictionary<string, List<int>>();
+
+        if (!result.MonthlyItemOrders[month].ContainsKey(sku))
+            result.MonthlyItemOrders[month][sku] = new List<int>();
+
+        result.MonthlyItemOrders[month][sku].Add(qty);
+    }
+
+    static void PrintResults(ResultModel result)
+    {
         Console.WriteLine("===== TOTAL SALES =====");
-        Console.WriteLine(totalSales);
+        Console.WriteLine(result.TotalSales);
 
         Console.WriteLine("\n===== MONTH-WISE SALES =====");
-        foreach (var m in monthlySales)
+        foreach (var m in result.MonthlySales)
             Console.WriteLine($"{m.Key}: {m.Value}");
 
-        Console.WriteLine("\n===== MOST POPULAR ITEM + STATS =====");
-        foreach (var month in monthlyItemQty)
+        Console.WriteLine("\n===== MOST POPULAR ITEM =====");
+        foreach (var month in result.MonthlyItemQty)
         {
-            string maxItem = "";
-            int maxQty = 0;
+            var maxItem = month.Value.OrderByDescending(x => x.Value).First();
 
-            foreach (var item in month.Value)
-            {
-                if (item.Value > maxQty)
-                {
-                    maxQty = item.Value;
-                    maxItem = item.Key;
-                }
-            }
+            var orders = result.MonthlyItemOrders[month.Key][maxItem.Key];
 
-            var orders = monthlyItemOrders[month.Key][maxItem];
-
-            int min = int.MaxValue, max = int.MinValue, sum = 0;
-
-            foreach (var q in orders)
-            {
-                if (q < min) min = q;
-                if (q > max) max = q;
-                sum += q;
-            }
-
-            double avg = (double)sum / orders.Count;
-
-            Console.WriteLine($"{month.Key}: {maxItem}");
-            Console.WriteLine($"   Min: {min}, Max: {max}, Avg: {avg:F2}");
+            Console.WriteLine($"{month.Key}: {maxItem.Key}");
+            Console.WriteLine($"Min: {orders.Min()}, Max: {orders.Max()}, Avg: {orders.Average():F2}");
         }
 
         Console.WriteLine("\n===== HIGHEST REVENUE ITEM =====");
-        foreach (var month in monthlyItemRevenue)
+        foreach (var month in result.MonthlyItemRevenue)
         {
-            string maxItem = "";
-            double maxRevenue = 0;
-
-            foreach (var item in month.Value)
-            {
-                if (item.Value > maxRevenue)
-                {
-                    maxRevenue = item.Value;
-                    maxItem = item.Key;
-                }
-            }
-
-            Console.WriteLine($"{month.Key}: {maxItem} ({maxRevenue})");
+            var maxItem = month.Value.OrderByDescending(x => x.Value).First();
+            Console.WriteLine($"{month.Key}: {maxItem.Key} ({maxItem.Value})");
         }
 
-        Console.WriteLine("\n===== MONTH-TO-MONTH GROWTH (%) =====");
-
-        var months = new List<string>(monthlyItemRevenue.Keys);
-        months.Sort();
-
-        for (int i = 1; i < months.Count; i++)
-        {
-            string prev = months[i - 1];
-            string curr = months[i];
-
-            Console.WriteLine($"\n{prev} -> {curr}");
-
-            foreach (var item in monthlyItemRevenue[curr])
-            {
-                double currVal = item.Value;
-                double prevVal = monthlyItemRevenue.ContainsKey(prev) &&
-                                 monthlyItemRevenue[prev].ContainsKey(item.Key)
-                                 ? monthlyItemRevenue[prev][item.Key]
-                                 : 0;
-
-                if (prevVal == 0)
-                {
-                    Console.WriteLine($"{item.Key}: New item");
-                }
-                else
-                {
-                    double growth = ((currVal - prevVal) / prevVal) * 100;
-                    Console.WriteLine($"{item.Key}: {growth:F2}%");
-                }
-            }
-        }
-
-        Console.WriteLine("\n===== DATA ERRORS =====");
-        foreach (var e in errors)
+        Console.WriteLine("\n===== ERRORS =====");
+        foreach (var e in result.Errors)
             Console.WriteLine(e);
     }
+}
+
+class ResultModel
+{
+    public double TotalSales = 0;
+    public Dictionary<string, double> MonthlySales = new();
+    public Dictionary<string, Dictionary<string, int>> MonthlyItemQty = new();
+    public Dictionary<string, Dictionary<string, double>> MonthlyItemRevenue = new();
+    public Dictionary<string, Dictionary<string, List<int>>> MonthlyItemOrders = new();
+    public List<string> Errors = new();
 }
